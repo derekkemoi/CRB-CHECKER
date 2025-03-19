@@ -101,11 +101,11 @@ function ReportGeneration() {
               setShowModal(false);
               navigate('/app/payment');
             }, 500);
-            return 100;
+            return 120;
           }
           return prev + 1;
         });
-      }, 350);
+      }, 100);
     }
 
     return () => {
