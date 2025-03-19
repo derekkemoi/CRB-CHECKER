@@ -6,7 +6,7 @@ import { useUserFlow } from '../contexts/UserFlowContext';
 
 function ReportGeneration() {
   const navigate = useNavigate();
-  const { hasPaid, setPurpose, setHasGeneratedReport } = useUserFlow();
+  const { setHasGeneratedReport } = useUserFlow();
   const [selectedPurpose, setSelectedPurpose] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -18,12 +18,6 @@ function ReportGeneration() {
       setUserData(JSON.parse(storedUser));
     }
   }, []);
-
-  useEffect(() => {
-    if (hasPaid) {
-      navigate('/app/payment');
-    }
-  }, [hasPaid, navigate]);
 
   const handlePurposeSelect = (purposeId: string) => {
     setSelectedPurpose(purposeId);
@@ -43,7 +37,6 @@ function ReportGeneration() {
           if (prev >= 100) {
             clearInterval(interval);
             if (selectedPurpose) {
-              setPurpose(true);
               setHasGeneratedReport(true);
 
               // Get user data from localStorage
@@ -99,19 +92,19 @@ function ReportGeneration() {
             }
             setTimeout(() => {
               setShowModal(false);
-              navigate('/app/payment');
+              navigate('/app/dashboard');
             }, 500);
-            return 120;
+            return 100;
           }
           return prev + 1;
         });
-      }, 100);
+      }, 150);
     }
 
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [showModal, navigate, selectedPurpose, setPurpose, setHasGeneratedReport]);
+  }, [showModal, navigate, selectedPurpose, setHasGeneratedReport]);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
@@ -175,7 +168,7 @@ function ReportGeneration() {
 
             <div className="text-center mb-6">
               <h2 className="text-xl font-bold text-gray-900 mb-2">
-                Hello {userData?.fullName?.split(' ')[0] || 'User'}
+                Hello {userData?.fullName || 'User'}
               </h2>
               <h3 className="text-lg font-semibold text-gray-900 mb-2">
                 Generating Your CRB Report

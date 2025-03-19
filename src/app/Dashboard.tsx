@@ -1,8 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { Shield, CreditCard, AlertTriangle, CheckCircle, Clock, Search, Download } from 'lucide-react';
+import { Shield, CreditCard, AlertTriangle, Clock, Search, Download } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { useNavigate } from 'react-router-dom';
 import { useUserFlow } from '../contexts/UserFlowContext';
+import { toast } from 'react-toastify';
+import PaymentInstructionsModal from './components/PaymentInstructionsModal';
+import ReportReadyModal from './components/ReportReadyModal';
+import { paymentConfig } from '../config/pricing';
 
 interface CRBReport {
   report_id: string;
@@ -35,13 +39,14 @@ interface CRBReport {
 
 function Dashboard() {
   const navigate = useNavigate();
-  const { hasGeneratedReport } = useUserFlow();
+  const { hasGeneratedReport, hasPaid, setHasPaid } = useUserFlow();
   const [reportData, setReportData] = useState<CRBReport | null>(null);
-  const [showMobileMenu, setShowMobileMenu] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [mpesaMessage, setMpesaMessage] = useState('');
 
   useEffect(() => {
     if (!hasGeneratedReport) {
-      navigate('/app/payment');
+      navigate('/app/report');
       return;
     }
 
@@ -49,12 +54,52 @@ function Dashboard() {
     if (data) {
       setReportData(JSON.parse(data));
     } else {
-      navigate('/app/payment');
+      navigate('/app/report');
     }
   }, [hasGeneratedReport, navigate]);
 
+  const validateMpesaMessage = (message: string) => {
+    if (!/^[A-Z0-9]+/.test(message)) {
+      return { isValid: false, error: 'Invalid M-PESA message format' };
+    }
+
+    const amountRegex = /Ksh\s*(\d+(?:\.\d{2})?)/;
+    const amountMatch = message.match(amountRegex);
+    if (!amountMatch) {
+      return { isValid: false, error: 'Could not find payment amount in message' };
+    }
+
+    const paidAmount = parseFloat(amountMatch[1]);
+    if (paidAmount !== paymentConfig.amount) {
+      return { isValid: false, error: `Payment amount must be KES ${paymentConfig.amount}` };
+    }
+
+    if (!message.includes(paymentConfig.mpesa.businessName)) {
+      return { isValid: false, error: 'Invalid payment recipient' };
+    }
+
+    return { isValid: true };
+  };
+
+  const handleValidatePayment = () => {
+    if (!mpesaMessage.trim()) {
+      toast.error('Please paste the M-PESA confirmation message');
+      return;
+    }
+
+    const validation = validateMpesaMessage(mpesaMessage);
+    if (!validation.isValid) {
+      toast.error(validation.error);
+      return;
+    }
+
+    setHasPaid(true);
+    setShowPaymentModal(false);
+    toast.success('Payment validated successfully!');
+  };
+
   const generatePDF = () => {
-    if (!reportData) return;
+    if (!reportData || !hasPaid) return;
 
     const doc = new jsPDF({
       orientation: 'portrait',
@@ -162,24 +207,6 @@ function Dashboard() {
     window.open(pdfOutput, '_blank');
   };
 
-  const getCreditScoreColor = (score: number) => {
-    if (score >= 700) return 'text-green-500';
-    if (score >= 500) return 'text-yellow-500';
-    return 'text-red-500';
-  };
-
-  const getCreditScoreLabel = (score: number) => {
-    if (score >= 700) return 'Excellent';
-    if (score >= 500) return 'Fair';
-    return 'Poor';
-  };
-
-  const getCreditScoreBackground = (score: number) => {
-    if (score >= 700) return 'bg-green-500';
-    if (score >= 500) return 'bg-yellow-500';
-    return 'bg-red-500';
-  };
-
   if (!reportData) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -200,22 +227,52 @@ function Dashboard() {
               <span className="text-xl md:text-2xl font-bold">CRB Check</span>
             </div>
             <button 
-              onClick={generatePDF}
-              className="flex items-center space-x-1 bg-green-500 hover:bg-green-400 transition-all duration-300 px-3 py-1.5 md:px-4 md:py-2 rounded-lg text-sm group relative overflow-hidden transform hover:scale-105 active:scale-95 shadow-lg hover:shadow-xl"
+              onClick={hasPaid ? generatePDF : () => setShowPaymentModal(true)}
+              className={`flex items-center space-x-1 px-3 py-1.5 md:px-4 md:py-2 rounded-lg text-sm transition-all duration-300 ${
+                hasPaid 
+                  ? 'bg-green-500 hover:bg-green-400' 
+                  : 'bg-gray-400 cursor-not-allowed opacity-75'
+              }`}
             >
-              <span className="relative z-10 inline-flex items-center">
-                <span>Download Report</span>
-                <Download className="w-4 h-4 ml-1 transition-transform group-hover:translate-y-0.5" />
-              </span>
-              <div className="absolute inset-0 bg-gradient-to-r from-green-600 to-green-400 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+              <span>Download Report</span>
+              <Download className="w-4 h-4" />
             </button>
           </div>
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-4 md:py-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {/* Credit Score */}
+      <main className="container mx-auto px-4 py-4 md:py-8 relative">
+        {/* Payment Required Modal */}
+        {!hasPaid && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl max-w-md w-full p-4 relative">
+              {showPaymentModal ? (
+                <PaymentInstructionsModal
+                  onClose={() => setShowPaymentModal(false)}
+                  amount={paymentConfig.amount}
+                  tillNumber={paymentConfig.mpesa.tillNumber}
+                  businessName={paymentConfig.mpesa.businessName}
+                  mpesaMessage={mpesaMessage}
+                  onMpesaMessageChange={setMpesaMessage}
+                  onValidatePayment={handleValidatePayment}
+                />
+              ) : (
+                <ReportReadyModal
+                  fullName={reportData.personal_information.full_name}
+                  idNumber={reportData.personal_information.id_number}
+                  amount={paymentConfig.amount}
+                  features={paymentConfig.features}
+                  benefits={paymentConfig.benefits}
+                  onMakePayment={() => setShowPaymentModal(true)}
+                />
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Main Dashboard Content - Blurred when not paid */}
+        <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 ${!hasPaid ? 'filter blur-sm pointer-events-none' : ''}`}>
+          {/* Credit Score Card */}
           <div className="bg-white p-4 md:p-6 rounded-xl shadow-lg col-span-1">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-lg font-semibold">Credit Score</h2>
@@ -378,5 +435,23 @@ function Dashboard() {
     </div>
   );
 }
+
+const getCreditScoreColor = (score: number) => {
+  if (score >= 700) return 'text-green-500';
+  if (score >= 500) return 'text-yellow-500';
+  return 'text-red-500';
+};
+
+const getCreditScoreLabel = (score: number) => {
+  if (score >= 700) return 'Excellent';
+  if (score >= 500) return 'Fair';
+  return 'Poor';
+};
+
+const getCreditScoreBackground = (score: number) => {
+  if (score >= 700) return 'bg-green-500';
+  if (score >= 500) return 'bg-yellow-500';
+  return 'bg-red-500';
+};
 
 export default Dashboard;

@@ -1,17 +1,20 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Shield, User, Mail, Lock, ArrowRight, Phone, CreditCard, Eye, EyeOff } from 'lucide-react';
+import { Shield, User, Lock, ArrowRight, Phone, CreditCard, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { toast } from 'react-toastify';
 import { useUserFlow } from '../contexts/UserFlowContext';
+import { useSignupCheck } from '../hooks/useSignupCheck';
 
 function SignUp() {
   const navigate = useNavigate();
   const { signup, isLoading } = useAuth();
   const { resetFlow } = useUserFlow();
+  const { setSignedUp } = useSignupCheck();
+  const [signupProgress, setSignupProgress] = useState(0);
+
   const [formData, setFormData] = useState({
     fullName: '',
-    email: '',
     phone: '',
     idNumber: '',
     password: '',
@@ -20,7 +23,6 @@ function SignUp() {
 
   const [errors, setErrors] = useState({
     fullName: '',
-    email: '',
     phone: '',
     idNumber: '',
     password: '',
@@ -30,11 +32,13 @@ function SignUp() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
+  // Use the signup check hook to handle redirections
+  useSignupCheck();
+
   const validateForm = () => {
     let isValid = true;
     const newErrors = {
       fullName: '',
-      email: '',
       phone: '',
       idNumber: '',
       password: '',
@@ -48,14 +52,6 @@ function SignUp() {
       newErrors.fullName = 'Full name must be at least 3 characters';
       isValid = false;
     }
-
-    // if (!formData.email) {
-    //   newErrors.email = 'Email is required';
-    //   isValid = false;
-    // } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
-    //   newErrors.email = 'Please enter a valid email';
-    //   isValid = false;
-    // }
 
     if (!formData.phone) {
       newErrors.phone = 'Phone number is required';
@@ -93,21 +89,54 @@ function SignUp() {
     return isValid;
   };
 
+  const simulateSignup = async () => {
+    const interval = setInterval(() => {
+      setSignupProgress(prev => {
+        if (prev >= 100) {
+          clearInterval(interval);
+          return 100;
+        }
+        return prev + 2.5;
+      });
+    }, 100);
+
+    return new Promise(resolve => {
+      setTimeout(() => {
+        clearInterval(interval);
+        setSignupProgress(100);
+        resolve(true);
+      }, 4000);
+    });
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (validateForm()) {
       try {
         const { confirmPassword, ...signupData } = formData;
-        await signup(signupData);
+        
+        // Start progress
+        setSignupProgress(0);
+        
+        // Simulate signup process
+        await simulateSignup();
+        
+        // Generate a temporary email using phone number
+        const tempEmail = `${signupData.phone.replace(/[^0-9]/g, '')}@temp.com`;
+        
+        // Actual signup with generated email
+        await signup({ ...signupData, email: tempEmail });
         
         // Save user data to localStorage
         const userData = {
           fullName: formData.fullName,
-          email: "exampleuser@gmail.com",
           phone: formData.phone,
           idNumber: formData.idNumber
         };
         localStorage.setItem('user', JSON.stringify(userData));
+        
+        // Set signup flag
+        setSignedUp();
         
         toast.success('Successfully signed up!');
         // Reset any existing flow state before starting new flow
@@ -115,6 +144,7 @@ function SignUp() {
         // Redirect to report generation page
         navigate('/app/report');
       } catch (error) {
+        setSignupProgress(0);
         toast.error('Failed to sign up. Please try again.');
       }
     }
@@ -170,25 +200,6 @@ function SignUp() {
                 </div>
                 {errors.fullName && <p className="text-red-500 text-xs mt-1">{errors.fullName}</p>}
               </div>
-
-              {/* <div>
-                <label className="block text-sm font-medium text-gray-700">Email Address</label>
-                <div className="relative mt-1">
-                  <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                  <input
-                    type="email"
-                    name="email"
-                    value={formData.email}
-                    onChange={handleChange}
-                    className={`w-full pl-9 pr-3 py-2 rounded-lg border ${
-                      errors.email ? 'border-red-500' : 'border-gray-300'
-                    } focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm`}
-                    placeholder="Enter your email"
-                    disabled={isLoading}
-                  />
-                </div>
-                {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email}</p>}
-              </div> */}
 
               <div>
                 <label className="block text-sm font-medium text-gray-700">Phone Number</label>
@@ -311,18 +322,36 @@ function SignUp() {
                 </label>
               </div>
 
-              <button
-                type="submit"
-                className="w-full flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg text-white bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={isLoading}
-              >
-                {isLoading ? 'Creating Account...' : (
-                  <>
-                    Create Account
-                    <ArrowRight className="ml-2 -mr-1 w-4 h-4" />
-                  </>
+              <div className="space-y-2">
+                {signupProgress > 0 && (
+                  <div className="h-1 w-full bg-gray-200 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-blue-600 transition-all duration-300 ease-out"
+                      style={{ width: `${signupProgress}%` }}
+                    />
+                  </div>
                 )}
-              </button>
+
+                <button
+                  type="submit"
+                  className="w-full flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg text-white bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed relative overflow-hidden"
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <span className="flex items-center">
+                      Creating Account
+                      <span className="ml-1">
+                        {signupProgress > 0 && `${Math.round(signupProgress)}%`}
+                      </span>
+                    </span>
+                  ) : (
+                    <>
+                      Create Account
+                      <ArrowRight className="ml-2 -mr-1 w-4 h-4" />
+                    </>
+                  )}
+                </button>
+              </div>
             </form>
 
             <div className="mt-3 text-center">
